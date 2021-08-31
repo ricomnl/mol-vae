@@ -29,9 +29,9 @@ params_dict = dict(
     batch_size = 32,
     rnn_type = RnnType.LSTM,
     vocab_size = sf_train.n_symbols,
-    embed_dim = 100,
+    embed_dim = 250,
     rnn_hidden_dim = 250,
-    latent_dim = 50,
+    latent_dim = 250,
     n_epochs = 50,
     learning_rate = 1e-2,
     n_layers = 2,
@@ -44,7 +44,7 @@ params_dict = dict(
     temperature = 0.9,
     temperature_min = 0.5,
     temperature_dec = 0.000002,
-    grad_clip = 5.0,
+    grad_clip = 1.0,
 )
 params = Parameters(params_dict)
 
@@ -69,7 +69,7 @@ for epoch in range(1, params.n_epochs+1):
     epoch_loss = vae.train_epoch(train_dataloader)
 
     vae.eval()
-    if epoch % 1 == 0:
+    if epoch % 5 == 0:
         target = torch.tensor(np.random.choice(train_dataloader.dataset)).unsqueeze(0)
         target_selfies = tensor2selfies(sf_train, target)
         print(f"Target:\n {target_selfies}")

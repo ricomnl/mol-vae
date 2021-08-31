@@ -28,6 +28,7 @@ class TOK_XX:
     BOS_id = TOK_XX_ids[BOS]
     EOS_id = TOK_XX_ids[EOS]
 
+
 class SelfiesData(Dataset):
     def __init__(self, symbols):
         self.symbols = symbols
@@ -56,6 +57,27 @@ class SelfiesData(Dataset):
         return torch.tensor(indexes, dtype=torch.long, device=device)
 
 
+class Parameters:
+    def __init__(self, data_dict):
+        for k, v in data_dict.items():
+            exec("self.%s=%s" % (k, v))
+
+
+class RnnType:
+    GRU = 1
+    LSTM = 2
+
+
+class AeType:
+    AE = 1
+    VAE = 2
+
+
+class AnnealType:
+    LOGISTIC = 1
+    LINEAR = 2
+
+
 def tensor2selfies(lang, tensor):
     """Convert a tensor into a selfies string."""
     return "".join([lang.index2symbol[t.item()] for t in tensor.squeeze(0) if t.item() not in (TOK_XX.TOK_XX_ids.values())])
@@ -68,9 +90,9 @@ def selfies2image(s):
 
 
 def kl_anneal_function(anneal_function, step, k, x0):
-    if anneal_function == "logistic":
+    if anneal_function == AnnealType.LOGISTIC:
         return float(1/(1+np.exp(-k*(step-x0))))
-    elif anneal_function == "linear":
+    elif anneal_function == AnnealType.LINEAR:
         return min(1, step/x0)
 
 
@@ -87,22 +109,6 @@ def plot_kl_loss_weight(losses, weights):
     ax2.set_ylabel("KL Term Value")
 
     fig.show()
-
-
-class Parameters:
-    def __init__(self, data_dict):
-        for k, v in data_dict.items():
-            exec("self.%s=%s" % (k, v))
-
-
-class RnnType:
-    GRU = 1
-    LSTM = 2
-
-
-class AeType:
-    AE = 1
-    VAE = 2
 
 
 class EncoderRNN(nn.Module):
@@ -248,11 +254,13 @@ class DecoderRNN(nn.Module):
         outputs = torch.zeros((batch_size, sequence_length), dtype=torch.long).to(self.device)
         # outputs: sl x bs x n_o
         for i in range(sequence_length):
-            # TODO: implement random word drop
-            # drop words randomly
-            # p_drop_word = torch.rand(1).item()
-            # if p_drop_word > self.word_keep_rate:
-            #     decoder_input = to_var(torch.LongTensor([TOK_XX.UNK_id]))
+            if self.params.word_dropout_rate > 0.0:
+                # drop words randomly
+                p_keep_word = torch.rand(input.size()).to(self.device)
+                # make sure to keep all BOS, EOS and PAD tokens
+                p_keep_word[input.data <= TOK_XX.EOS_id] = 1.
+                input[p_keep_word < self.params.word_dropout_rate] = TOK_XX.UNK_id
+
             output, hidden = self._step(input, hidden)
 
             _, topi = output.topk(1)
@@ -323,10 +331,10 @@ class DecoderRNN(nn.Module):
         if self.num_directions > 1:
             hidden = torch.cat([hidden[0:hidden.size(0):2], hidden[1:hidden.size(0):2]], 2)
             # Alternative approach (same output but easier to understand)
-            #h = hidden.view(self.n_layers, self.num_directions, hidden.size(1), self.rnn_hidden_dim)
-            #h_fwd = h[:, 0, :, :]
-            #h_bwd = h[:, 1, :, :]
-            #hidden = torch.cat([h_fwd, h_bwd], 2)
+            # h = hidden.view(self.n_layers, self.num_directions, hidden.size(1), self.rnn_hidden_dim)
+            # h_fwd = h[:, 0, :, :]
+            # h_bwd = h[:, 1, :, :]
+            # hidden = torch.cat([h_fwd, h_bwd], 2)
         return hidden
 
     def _unflatten_hidden(self, x, batch_size):

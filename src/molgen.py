@@ -7,7 +7,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 
-from utils import AeType, SelfiesData, AE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
+from utils import AeType, SelfiesData, AE, AnnealType, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
 
 class Logger():
     def log(self, msg):
@@ -16,7 +16,7 @@ class Logger():
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 smiles_df = pd.read_csv("data/zinc15_250K_2D.csv")
-smiles = np.random.choice(smiles_df["smiles"].values, size=1000)
+smiles = np.random.choice(smiles_df["smiles"].values, size=10_000)
 # smiles = smiles_df["smiles"].values
 
 sfs = [sf.encoder(s) for s in smiles]
@@ -33,15 +33,15 @@ params_dict = dict(
     embed_dim = 250,
     rnn_hidden_dim = 250,
     latent_dim = 250,
-    n_epochs = 50,
+    n_epochs = 5,
     learning_rate = 1e-2,
     n_layers = 2,
     bidirectional_encoder = True,
-    # k = 0.00125,
-    # x0 = 2500,
-    # anneal_function = "logistic",
+    k = 0.00125,
+    x0 = 150,
+    anneal_function = AnnealType.LOGISTIC,
     rnn_dropout = 0.0,
-    # word_keep_rate = 0.0,
+    word_dropout_rate = 0.1,
     temperature = 0.9,
     temperature_min = 0.5,
     temperature_dec = 0.000002,
@@ -70,7 +70,7 @@ for epoch in range(1, params.n_epochs+1):
     epoch_loss = model.train_epoch(train_dataloader)
 
     model.eval()
-    if epoch % 5 == 0:
+    if epoch % 1 == 0:
         target = torch.tensor(np.random.choice(train_dataloader.dataset)).unsqueeze(0)
         target_selfies = tensor2selfies(sf_train, target)
         print(f"Target:\n {target_selfies}")
@@ -78,18 +78,8 @@ for epoch in range(1, params.n_epochs+1):
         generated_selfies = tensor2selfies(sf_train, torch.tensor(generated))
         print(f"Generated:\n {generated_selfies}")
         wandb.log({
-            "ground-truth": wandb.Image(selfies2image(target_selfies), caption=target_selfies),
-            "predicted": wandb.Image(selfies2image(generated_selfies), caption=generated_selfies)
+            "predicted": [
+                wandb.Image(selfies2image(target_selfies), caption=target_selfies),
+                wandb.Image(selfies2image(generated_selfies), caption=generated_selfies)
+            ]
         })
-
-# it = iter(train_dataloader)
-# input_tensor, input_lengths = next(it)
-
-# encoder = EncoderRNN(input_size=sf_train.n_symbols, hidden_size=hidden_size, latent_size=latent_size)
-# decoder = DecoderRNN(latent_size=latent_size, hidden_size=hidden_size, output_size=sf_train.n_symbols, word_keep_rate=0.0)
-
-# batch_size, input_length = input_tensor.size()
-
-# mu, logvar, z = encoder(input_tensor, input_lengths)
-# outputs_tensor = decoder(z, input_tensor, input_lengths, temperature)
-# outputs_tensor = outputs_tensor.data.max(1)[1]

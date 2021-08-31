@@ -382,7 +382,7 @@ class AE():
 
         self.temperature = params.temperature
         self.print_every = 1
-
+        self.step = 0
         self.logger = logger
 
     def train(self):
@@ -436,8 +436,8 @@ class AE():
 
         if self.params.ae_type == AeType.VAE:
             kld_loss = (-0.5 * torch.sum(1. + logv - mean.pow(2) - logv.exp(), 1)).mean()
-            # kld_weight = kl_anneal_function(self.params.anneal_function, step, self.params.k, self.params.x0)
-            kld_weight = 0.1
+            kld_weight = kl_anneal_function(self.params.anneal_function, self.step, self.params.k, self.params.x0)
+            # kld_weight = 0.1
             ce_loss = loss
             loss += (kld_weight * kld_loss)
 
@@ -449,6 +449,7 @@ class AE():
         _ = nn.utils.clip_grad_norm_(self.decoder.parameters(), self.params.grad_clip)
         self.encoder_optimizer.step()
         self.decoder_optimizer.step()
+        self.step += 1
 
         return loss.item() / num_steps
 

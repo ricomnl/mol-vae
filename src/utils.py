@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from rdkit.Chem import MolFromSmiles
+from rdkit.Chem import Draw
 from torch.utils.data import Dataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,7 +57,14 @@ class SelfiesData(Dataset):
 
 
 def tensor2selfies(lang, tensor):
+    """Convert a tensor into a selfies string."""
     return "".join([lang.index2symbol[t.item()] for t in tensor.squeeze(0) if t.item() not in (TOK_XX.TOK_XX_ids.values())])
+
+
+def selfies2image(s):
+    """Convert a selfies string into a PIL image."""
+    mol = MolFromSmiles(sf.decoder(s), sanitize=True)
+    return Draw.MolToImage(mol)
 
 
 def kl_anneal_function(anneal_function, step, k, x0):

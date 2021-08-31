@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import selfies as sf
@@ -8,7 +7,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 
-from src.utils import SelfiesData, VAE, collate_fn, tensor2selfies, Parameters, RnnType
+from src.utils import SelfiesData, VAE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
 
 class Logger():
     def log(self, msg):
@@ -17,7 +16,7 @@ class Logger():
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 smiles_df = pd.read_csv("data/zinc15_250K_2D.csv")
-smiles = np.random.choice(smiles_df["smiles"].values, size=1_000)
+smiles = np.random.choice(smiles_df["smiles"].values, size=100)
 # smiles = smiles_df["smiles"].values
 
 sfs = [sf.encoder(s) for s in smiles]
@@ -72,9 +71,15 @@ for epoch in range(1, params.n_epochs+1):
     vae.eval()
     if epoch % 1 == 0:
         target = torch.tensor(np.random.choice(train_dataloader.dataset)).unsqueeze(0)
-        print(f"Target:\n {tensor2selfies(sf_train, target)}")
+        target_selfies = tensor2selfies(sf_train, target)
+        print(f"Target:\n {target_selfies}")
         generated = vae.evaluate(target, max_steps=sf_train.n_symbols)[0]
-        print(f"Generated:\n {tensor2selfies(sf_train, torch.tensor(generated))}")
+        generated_selfies = tensor2selfies(sf_train, torch.tensor(generated))
+        print(f"Generated:\n {generated_selfies}")
+        wandb.log({
+            "ground-truth": wandb.Image(selfies2image(target_selfies), caption=target_selfies),
+            "predicted": wandb.Image(selfies2image(generated_selfies), caption=generated_selfies)
+        })
 
 # it = iter(train_dataloader)
 # input_tensor, input_lengths = next(it)
@@ -87,4 +92,3 @@ for epoch in range(1, params.n_epochs+1):
 # mu, logvar, z = encoder(input_tensor, input_lengths)
 # outputs_tensor = decoder(z, input_tensor, input_lengths, temperature)
 # outputs_tensor = outputs_tensor.data.max(1)[1]
-

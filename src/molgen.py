@@ -7,7 +7,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 
-from src.utils import SelfiesData, VAE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
+from src.utils import AeType, SelfiesData, AE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
 
 class Logger():
     def log(self, msg):
@@ -26,7 +26,8 @@ sf_train = SelfiesData(sfs[:split])
 sf_valid = SelfiesData(sfs[split:])
 
 params_dict = dict(
-    batch_size = 32,
+    batch_size = 64,
+    ae_type = AeType.VAE,
     rnn_type = RnnType.LSTM,
     vocab_size = sf_train.n_symbols,
     embed_dim = 250,
@@ -52,28 +53,28 @@ train_dataloader = DataLoader(sf_train, batch_size=params.batch_size, shuffle=Tr
 test_dataloader = DataLoader(sf_valid, batch_size=params.batch_size, shuffle=True, collate_fn=collate_fn)
 
 criterion = nn.NLLLoss()
-vae = VAE(
+model = AE(
     device=device,
     params=params,
     criterion=criterion,
     logger=wandb)
 
 wandb.init(project="mol-vae", entity="rmeinl", config=params_dict)
-wandb.watch([vae.encoder, vae.decoder])
+wandb.watch([model.encoder, model.decoder])
 
 total_loss = 0.0
 for epoch in range(1, params.n_epochs+1):
     print(f"Epoch #{epoch}")
     
-    vae.train()
-    epoch_loss = vae.train_epoch(train_dataloader)
+    model.train()
+    epoch_loss = model.train_epoch(train_dataloader)
 
-    vae.eval()
+    model.eval()
     if epoch % 5 == 0:
         target = torch.tensor(np.random.choice(train_dataloader.dataset)).unsqueeze(0)
         target_selfies = tensor2selfies(sf_train, target)
         print(f"Target:\n {target_selfies}")
-        generated = vae.evaluate(target, max_steps=sf_train.n_symbols)[0]
+        generated = model.evaluate(target, max_steps=sf_train.n_symbols)[0]
         generated_selfies = tensor2selfies(sf_train, torch.tensor(generated))
         print(f"Generated:\n {generated_selfies}")
         wandb.log({

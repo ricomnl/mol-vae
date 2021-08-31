@@ -100,6 +100,11 @@ class RnnType:
     LSTM = 2
 
 
+class AeType:
+    AE = 1
+    VAE = 2
+
+
 class EncoderRNN(nn.Module):
     def __init__(self, device, params, embedding):
         super(EncoderRNN, self).__init__()
@@ -124,10 +129,11 @@ class EncoderRNN(nn.Module):
             batch_first=True)
         # Initialize hidden state
         self.hidden = None
-        self.hidden_factor = self.num_directions * self.params.n_layers
-        # TODO: switch back to mean and logv
-        # self.hidden_to_mean = nn.Linear(self.params.rnn_hidden_dim * self.hidden_factor, self.params.latent_dim)
-        # self.hidden_to_logv = nn.Linear(self.params.rnn_hidden_dim * self.hidden_factor, self.params.latent_dim)
+        self.hidden_factor = self.num_directions * self.params.n_layers * self.num_hidden_states
+        # use mean and logv for VAE
+        if self.params.ae_type == AeType.VAE:
+            self.hidden_to_mean = nn.Linear(self.params.rnn_hidden_dim * self.hidden_factor, self.params.latent_dim)
+            self.hidden_to_logv = nn.Linear(self.params.rnn_hidden_dim * self.hidden_factor, self.params.latent_dim)
 
         self._init_weights()
 
@@ -145,22 +151,22 @@ class EncoderRNN(nn.Module):
         # 1 x bs x n_h
         embedded = self.embedding(inputs)
         # embedded: bs x sl x n_h
-        # packed = torch.nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
-        # packed[0]: bs x sl - padded x n_h
         _, self.hidden = self.rnn(embedded, self.hidden)
         # hidden: 1 x bs x n_h
         embedded = self._flatten_hidden(self.hidden, batch_size)
         # embedded: bs x n_h
 
-        # mean = self.hidden_to_mean(embedded)
-        # mu: 1 x bs x n_l
-        # logv = self.hidden_to_logv(embedded)
-        # logv: 1 x bs x n_l
-        # Reparameterize
-        # z = self._sample(mean, logv)
-        # z: bs x sl x n_l
-        # return mean, logv, z
-        return None, None, embedded
+        if self.params.ae_type == AeType.VAE:
+            mean = self.hidden_to_mean(embedded)
+            # mu: 1 x bs x n_l
+            logv = self.hidden_to_logv(embedded)
+            # logv: 1 x bs x n_l
+            # Reparameterize
+            z = self._sample(mean, logv)
+            # z: bs x sl x n_l
+            return mean, logv, z
+        else:
+            return None, None, embedded
 
     def init_hidden(self, batch_size=1):
         if isinstance(self.rnn, nn.modules.rnn.GRU):
@@ -215,8 +221,9 @@ class DecoderRNN(nn.Module):
             dropout=self.params.rnn_dropout,
             batch_first=True)
 
-        # self.hidden_factor = self.num_directions * params.n_layers
-        # self.latent_to_hidden = nn.Linear(params.latent_dim, self.params.rnn_hidden_dim * self.hidden_factor)
+        if self.params.ae_type == AeType.VAE:
+            self.hidden_factor = self.num_directions * self.params.n_layers * self.num_hidden_states
+            self.latent_to_hidden = nn.Linear(self.params.latent_dim, self.params.rnn_hidden_dim * self.hidden_factor)
 
         self.out = nn.Linear(self.params.rnn_hidden_dim * self.num_directions, self.params.vocab_size)
         self._init_weights()
@@ -224,9 +231,10 @@ class DecoderRNN(nn.Module):
     def forward(self, inputs, z, temperature, return_outputs=False):
         batch_size, sequence_length = inputs.size()
 
-        # TODO: switch back
-        # hidden = self.latent_to_hidden(z)
-        x = z
+        if self.params.ae_type == AeType.VAE:
+            x = self.latent_to_hidden(z)
+        else:
+            x = z
         # hidden: bs x n_h
         hidden = self._unflatten_hidden(x, batch_size)
         # Restructure shape of hidden state to accommodate bidirectional encoder (decoder is unidirectional)
@@ -258,8 +266,6 @@ class DecoderRNN(nn.Module):
                 if input[0].item() == TOK_XX.EOS_id:
                     break
 
-        # print(f"In: {inputs}\nOut: {outputs}")
-
         # Return loss
         if return_outputs:
             return loss, outputs
@@ -268,9 +274,11 @@ class DecoderRNN(nn.Module):
 
     def generate(self, z, max_steps):
         decoded_sequence = []
-        # TODO: switch batch
-        # hidden = self.latent_to_hidden(z)
-        x = z
+
+        if self.params.ae_type == AeType.VAE:
+            x = self.latent_to_hidden(z)
+        else:
+            x = z
         # Unflatten hidden state for GRU or LSTM        
         hidden = self._unflatten_hidden(x, 1)
         # Restructure shape of hidden state to accommodate bidirectional encoder (decoder is unidirectional)
@@ -345,13 +353,18 @@ class DecoderRNN(nn.Module):
                 torch.nn.init.xavier_uniform_(m.weight)
                 m.bias.data.fill_(0.01)
 
-class VAE():
+class AE():
     def __init__(self, device, params, criterion, logger=None):
         self.device = device
         self.params = params
         self.criterion = criterion
 
-        self.embedding = nn.Embedding(self.params.vocab_size, self.params.embed_dim, padding_idx=TOK_XX.PAD_id)
+        if self.params.ae_type == AeType.VAE:
+            self.embedding = nn.Embedding(self.params.vocab_size, self.params.embed_dim, padding_idx=TOK_XX.PAD_id, max_norm=1, norm_type=2)
+            self.embedding.weight.data = F.normalize(self.embedding.weight.data, p=2, dim=1)
+        else:
+            self.embedding = nn.Embedding(self.params.vocab_size, self.params.embed_dim, padding_idx=TOK_XX.PAD_id)
+
         self.encoder = EncoderRNN(
             device=device, 
             params=params,
@@ -416,19 +429,20 @@ class VAE():
         self.decoder_optimizer.zero_grad()
 
         mean, logv, z = self.encoder(inputs)
-        ce_loss = self.decoder(inputs, z, self.temperature)
+        loss = self.decoder(inputs, z, self.temperature)
 
         if self.temperature > self.params.temperature_min: 
             self.temperature -= self.params.temperature_dec
 
-        # kld_loss = (-0.5 * torch.sum(1. + logv - mean.pow(2) - logv.exp(), 1)).mean()
-        # kld_weight = kl_anneal_function(anneal_function, step, k, x0)
-        # kld_weight = 0.1
-        # loss = ce_loss + (kld_weight * kld_loss)
-        loss = ce_loss
+        if self.params.ae_type == AeType.VAE:
+            kld_loss = (-0.5 * torch.sum(1. + logv - mean.pow(2) - logv.exp(), 1)).mean()
+            # kld_weight = kl_anneal_function(self.params.anneal_function, step, self.params.k, self.params.x0)
+            kld_weight = 0.1
+            ce_loss = loss
+            loss += (kld_weight * kld_loss)
 
-        # if self.logger:
-        #     self.logger.log({"kld_loss": kld_loss, "kld_weight": kld_weight, "ce_loss": ce_loss, "temperature": self.temperature})
+            if self.logger:
+                self.logger.log({"kld_loss": kld_loss, "kld_weight": kld_weight, "ce_loss": ce_loss, "temperature": self.temperature})
 
         loss.backward()
         _ = nn.utils.clip_grad_norm_(self.encoder.parameters(), self.params.grad_clip)

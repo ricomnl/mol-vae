@@ -16,7 +16,7 @@ class Logger():
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 smiles_df = pd.read_csv("data/zinc15_250K_2D.csv")
-smiles = np.random.choice(smiles_df["smiles"].values, size=100)
+smiles = np.random.choice(smiles_df["smiles"].values, size=1000)
 # smiles = smiles_df["smiles"].values
 
 sfs = [sf.encoder(s) for s in smiles]

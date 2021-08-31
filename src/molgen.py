@@ -7,7 +7,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 
-from src.utils import AeType, SelfiesData, AE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
+from utils import AeType, SelfiesData, AE, collate_fn, tensor2selfies, Parameters, RnnType, selfies2image
 
 class Logger():
     def log(self, msg):

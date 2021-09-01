@@ -24,20 +24,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # sfs = np.array([s for s in sfs if len(list(sf.split_selfies(s))) <= 32])
 # np.save("data/lt_32_tkn_selfies_zinc15.npy", sfs)
 sfs = np.load("data/lt_32_tkn_selfies_zinc15.npy")
-sfs = np.random.choice(sfs, size=1_000)
+sfs = np.random.choice(sfs, size=10)
 
-split = round(len(sfs)*0.8)
+split = round(len(sfs)*1.0) # 0.8
 sf_train = SelfiesData(sfs[:split])
 sf_valid = SelfiesData(sfs[split:])
 
 params_dict = dict(
-    batch_size = 64,
-    ae_type = AeType.VAE,
+    batch_size = 32,
+    ae_type = AeType.AE,
     rnn_type = RnnType.LSTM,
     vocab_size = sf_train.n_symbols,
-    embed_dim = 1024,
-    rnn_hidden_dim = 1024,
-    latent_dim = 512,
+    embed_dim = 512,
+    rnn_hidden_dim = 512,
+    latent_dim = 128,
     n_epochs = 50,
     learning_rate = 1e-3,
     n_layers = 2,

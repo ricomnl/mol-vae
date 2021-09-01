@@ -390,7 +390,7 @@ class AE():
         self.decoder_optimizer = torch.optim.Adam(self.decoder.parameters(), lr=params.learning_rate)
 
         self.temperature = params.temperature
-        self.print_every = 1
+        self.print_every = 10
         self.step = 0
         self.logger = logger
 
@@ -453,7 +453,7 @@ class AE():
             if self.logger:
                 self.logger.log({"kld_loss": kld_loss, "kld_weight": kld_weight, "ce_loss": ce_loss, "temperature": self.temperature})
 
-        loss.backward()
+        loss.backward(retain_graph=True)
         _ = nn.utils.clip_grad_norm_(self.encoder.parameters(), self.params.grad_clip)
         _ = nn.utils.clip_grad_norm_(self.decoder.parameters(), self.params.grad_clip)
         self.encoder_optimizer.step()

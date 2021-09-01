@@ -18,39 +18,41 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # smiles_df = pd.read_csv("data/zinc15_250K_2D.csv")
 # smiles = np.random.choice(smiles_df["smiles"].values, size=10_000)
 # smiles = smiles_df["smiles"].values
+smiles_df = pd.read_csv("data/0SelectedSMILES_QM9.txt")
+smiles = smiles_df["smiles"].values
 
-# sfs = [sf.encoder(s) for s in smiles]
+sfs = [sf.encoder(s) for s in smiles]
 # only keep the ones shorter than 32 tokens for now
 # sfs = np.array([s for s in sfs if len(list(sf.split_selfies(s))) <= 32])
 # np.save("data/lt_32_tkn_selfies_zinc15.npy", sfs)
-sfs = np.load("data/lt_32_tkn_selfies_zinc15.npy")
-sfs = np.random.choice(sfs, size=10)
+# sfs = np.load("data/lt_32_tkn_selfies_zinc15.npy")
+# sfs = np.random.choice(sfs, size=10)
 
-split = round(len(sfs)*1.0) # 0.8
+split = round(len(sfs)*0.5) # 0.8
 sf_train = SelfiesData(sfs[:split])
 sf_valid = SelfiesData(sfs[split:])
 
 params_dict = dict(
-    batch_size = 32,
-    ae_type = AeType.AE,
+    batch_size = 100,
+    ae_type = AeType.VAE,
     rnn_type = RnnType.LSTM,
     vocab_size = sf_train.n_symbols,
-    embed_dim = 512,
-    rnn_hidden_dim = 512,
-    latent_dim = 128,
-    n_epochs = 50,
-    learning_rate = 1e-3,
-    n_layers = 2,
+    embed_dim = 100,
+    rnn_hidden_dim = 100,
+    latent_dim = 50,
+    n_epochs = 1000,
+    learning_rate = 1e-4,
+    n_layers = 1,
     bidirectional_encoder = True,
     k = 0.025,
     x0 = 250,
     anneal_function = AnnealType.LOGISTIC,
     rnn_dropout = 0.1,
-    word_dropout_rate = 0.25,
+    word_dropout_rate = 0.1,
     temperature = 0.9,
     temperature_min = 0.5,
     temperature_dec = 0.000002,
-    grad_clip = 1.0,
+    grad_clip = 0.5,
 )
 params = Parameters(params_dict)
 
@@ -62,10 +64,10 @@ model = AE(
     device=device,
     params=params,
     criterion=criterion,
-    logger=wandb)
+    logger=None)
 
-wandb.init(project="mol-vae", entity="rmeinl", config=params_dict)
-wandb.watch([model.encoder, model.decoder])
+# wandb.init(project="mol-vae", entity="rmeinl", config=params_dict)
+# wandb.watch([model.encoder, model.decoder])
 
 total_loss = 0.0
 for epoch in range(1, params.n_epochs+1):
@@ -82,12 +84,13 @@ for epoch in range(1, params.n_epochs+1):
         generated = model.evaluate(target, max_steps=sf_train.n_symbols)[0]
         generated_selfies = tensor2selfies(sf_train, torch.tensor(generated))
         print(f"Generated:\n {generated_selfies}")
-        wandb.log({
-            "predicted": [
-                wandb.Image(selfies2image(target_selfies), caption=target_selfies),
-                wandb.Image(selfies2image(generated_selfies), caption=generated_selfies)
-            ]
-        })
+        if model.logger:
+            model.logger.log({
+                "predicted": [
+                    wandb.Image(selfies2image(target_selfies), caption=target_selfies),
+                    wandb.Image(selfies2image(generated_selfies), caption=generated_selfies)
+                ]
+            })
 
 # sweep_config = {
 #   "name" : "sweep",

@@ -259,6 +259,7 @@ class DecoderRNN(nn.Module):
                 p_keep_word = torch.rand(input.size()).to(self.device)
                 # make sure to keep all BOS, EOS and PAD tokens
                 p_keep_word[input.data <= TOK_XX.EOS_id] = 1.
+                input = input.clone()
                 input[p_keep_word < self.params.word_dropout_rate] = TOK_XX.UNK_id
 
             output, hidden = self._step(input, hidden)
